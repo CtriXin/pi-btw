@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
 import type {
 	Api,
 	AssistantMessage,
@@ -13,6 +12,7 @@ import type {
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { createTuiHarness } from "@narumitw/pi-tui-kit/testing";
+import { test } from "vitest";
 import {
 	BtwTextRangeSelector,
 	buildBtwSelectionLines,
