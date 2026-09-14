@@ -58,17 +58,32 @@ verified and documented, install only one of the two packages.
 ### Fork changes
 
 This fork keeps the upstream 0.58.1 TUI feature set and adds headless (RPC) support, persistent
-history, and structured host events. Status of the fork work:
+history, and structured host events. Status of the fork work (as of `v0.59.0-fork.1`):
 
 | Area | Status |
 | --- | --- |
-| Upstream 0.58.1 TUI behavior (`/btw`, fullscreen side thread, search, steering, bring-to-main) | Imported unchanged |
-| Repository/CI skeleton (this baseline) | In this commit |
-| Headless (`ctx.mode !== "tui"`) support | Planned (fork work in progress) |
-| Persistent `btw` custom entries and resume after restart | Planned (fork work in progress) |
-| `BTW_EVENT` structured events for MMS/Pilot | Contract drafted in [`docs/host-integration.md`](./docs/host-integration.md); planned |
-| `/btw:cancel`, `/btw:history`, `/btw:open`, `/btw:bring`, `/btw:thread` | Planned (fork work in progress) |
-| Grok-style non-blocking inline card for `/btw <question>` | Planned (fork work in progress) |
+| Upstream 0.58.1 fullscreen side thread (search, steering, bring-to-main, keybindings) | Imported unchanged; reachable via `/btw` (no arguments) or `/btw:thread [question]` |
+| Repository/CI skeleton | In this commit |
+| Headless (`ctx.mode === "rpc"`) support | Implemented; verified end-to-end with `pi --mode rpc` ([`scripts/e2e-rpc.mts`](./scripts/e2e-rpc.mts)) |
+| Persistent `btw` custom entries and resume after restart | Implemented; terminal turns append one `custom/btw` entry (never enters LLM context); `session_start` rebuilds resumable threads |
+| `BTW_EVENT` structured events for MMS/Pilot | Implemented per [`docs/host-integration.md`](./docs/host-integration.md) |
+| `/btw:cancel`, `/btw:history`, `/btw:open`, `/btw:bring`, `/btw:follow`, `/btw:thread` | Implemented |
+| Grok-style non-blocking inline card for `/btw <question>` | Implemented: streaming widget above the editor, terminal state persists as a transcript entry |
+
+#### Default interaction change
+
+Upstream `/btw <question>` opened the fullscreen side-thread workspace. In this fork,
+`/btw <question>` is a **non-blocking inline card**: the editor stays usable, the answer streams
+into a bordered widget above it while the main task keeps running, and the finished answer becomes
+a collapsible transcript entry. The fullscreen workspace remains available as `/btw` (no arguments)
+or `/btw:thread [question]`.
+
+#### Coexistence with upstream `@narumitw/pi-btw` (measured)
+
+Installing both packages registers two `btw` commands. Verified on Pi 0.85.1: Pi renames them to
+`/btw:1` and `/btw:2` in load order, no crash. **However, the bare `/btw` then becomes ambiguous and
+is sent to the main agent as a normal user message** — the question would enter the main context.
+Do not run both packages in the same Pi setup; pick one (`pi remove <source>` for the other).
 
 Compatibility: development, tests, and the pinned `@earendil-works/pi-*` devDependencies target Pi
 **0.85.1**. Other Pi versions are not verified by this repository.
@@ -83,14 +98,21 @@ The side thread stays separate until you explicitly bring context to the main ed
 
 | Command | Purpose |
 | --- | --- |
-| `/btw` | Choose context, start or resume a side thread, or change settings. |
-| `/btw <question>` | Start a new side thread immediately with the supplied question. |
+| `/btw <question>` | Non-blocking inline card answer (TUI) or headless answer with host events (RPC). |
+| `/btw` | Upstream menu: choose context, start or resume a side thread, or change settings (TUI only). In RPC mode this fails with `question_required`. |
+| `/btw:thread [question]` | Upstream fullscreen side-thread workspace (TUI only). |
+| `/btw:cancel [id]` | Cancel an in-flight side question (latest when no id is given). |
+| `/btw:history` | Recent persisted side questions (TUI overlay; RPC `history` event, last 20). |
+| `/btw:open [id]` | Read a persisted answer in a scrollable overlay; Esc closes (TUI only). |
+| `/btw:bring [id]` | Load a completed answer into the main editor without sending it. |
+| `/btw:follow <id> <question>` | Ask a follow-up on an existing side thread. |
 
-Both routes require TUI mode and a model with usable credentials; see [Settings](#-settings).
+The inline/headless flows require a model with usable credentials; see [Settings](#-settings).
 Side questions and selected conversation context are sent to that model's provider.
 Bringing context back fills the main editor without submitting; replacing an existing draft requires confirmation.
-Ctrl+C cancels the response and discards the current draft and queued questions, but completed exchanges remain resumable in memory.
-Read the [workflow guide](./docs/workflows.md) for context selection, copying, search, steering, and draft recovery; `/new`, `/resume`, `/reload`, and restart discard retained threads.
+Ctrl+C cancels the response in the fullscreen workspace and discards the current draft and queued questions.
+Read the [workflow guide](./docs/workflows.md) for context selection, copying, search, steering, and draft recovery.
+Finished turns persist as `custom/btw` session entries and survive `/new`, `/resume`, `/reload`, and restarts.
 
 ## ⚙️ Settings
 
@@ -190,8 +212,8 @@ The file is read for every `/btw` invocation, so edits apply without `/reload`.
 
 ## 🚧 Limitations
 
-- `/btw` supports TUI mode only in the imported upstream baseline (headless/RPC support is planned in this fork; see [Fork changes](#-fork-changes)).
-- Resume state is memory-only and lasts only for the current extension instance.
+- Headless mode covers `ctx.mode === "rpc"`; `print` and `json` modes report an error.
+- Threads resumed after a restart keep their Q&A turns but not the original branch snapshot; follow-ups then run with `context.mode` based on the rebuilt (empty) background.
 - A side thread retains the latest 40,000 characters of main-conversation context and adds a truncation notice when earlier content is omitted.
 - Clipboard access depends on Pi's host helper, the operating system, and the terminal.
 - Pi versions before 0.85 omit the clickable jump-to-latest control.
