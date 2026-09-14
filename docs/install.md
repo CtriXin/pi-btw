@@ -3,13 +3,13 @@
 ## From npm
 
 ```bash
-pi install npm:@ctrixin/pi-btw
+pi install npm:@ctrixin-dev/pi-btw
 ```
 
 Try it for one run without adding it to settings:
 
 ```bash
-pi -e npm:@ctrixin/pi-btw
+pi -e npm:@ctrixin-dev/pi-btw
 ```
 
 ## From git
@@ -38,11 +38,11 @@ pi install "$(pwd)"
 - This repository is a fork of `@narumitw/pi-btw` v0.58.1 (MIT); see [`../NOTICE`](../NOTICE).
 - The upstream package remains published. Both packages register a `/btw` command.
   Coexistence behavior has **not** been verified yet, so install only one of the two.
-- `@ctrixin/pi-btw` targets the Pi release pinned in `devDependencies` (currently `0.85.1`); other
+- `@ctrixin-dev/pi-btw` targets the Pi release pinned in `devDependencies` (currently `0.85.1`); other
   versions are unverified.
 
 ## Remove
 
 ```bash
-pi remove npm:@ctrixin/pi-btw
+pi remove npm:@ctrixin-dev/pi-btw
 ```

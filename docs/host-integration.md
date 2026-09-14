@@ -1,6 +1,6 @@
 # Host integration contract (v1)
 
-Status: **implemented** in `@ctrixin/pi-btw` `v0.59.0-fork.1` (headless RPC mode, persistence, and
+Status: **implemented** in `@ctrixin-dev/pi-btw` `v0.59.0-fork.1` (headless RPC mode, persistence, and
 these events are shipped and covered by `npm test` plus `npm run test:e2e`).
 
 ## Goals

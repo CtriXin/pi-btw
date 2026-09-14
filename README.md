@@ -1,6 +1,6 @@
 # 💬 pi-btw — Ask Side Questions Without Derailing the Main Task
 
-[![npm](https://img.shields.io/npm/v/@ctrixin/pi-btw)](https://www.npmjs.com/package/@ctrixin/pi-btw) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@ctrixin-dev/pi-btw)](https://www.npmjs.com/package/@ctrixin-dev/pi-btw) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Ask questions in a temporary side thread without adding them to the main Pi conversation.
 Only context you explicitly bring back is loaded into the main editor.
@@ -23,13 +23,13 @@ Only context you explicitly bring back is loaded into the main editor.
 ## 📦 Install
 
 ```bash
-pi install npm:@ctrixin/pi-btw
+pi install npm:@ctrixin-dev/pi-btw
 ```
 
 Try without installing permanently:
 
 ```bash
-pi -e npm:@ctrixin/pi-btw
+pi -e npm:@ctrixin-dev/pi-btw
 ```
 
 Or install a pinned git ref / a local checkout:

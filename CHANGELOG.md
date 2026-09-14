@@ -1,4 +1,4 @@
-# @ctrixin/pi-btw
+# @ctrixin-dev/pi-btw
 
 > Fork of `@narumitw/pi-btw` (MIT). See `NOTICE` for provenance and `README.md` for the fork diff.
 
@@ -8,7 +8,7 @@
   with the upstream git history imported via `git filter-repo`.
 - Added standalone dev/CI tooling: biome config, vitest config plus the upstream test helpers, and a
   GitHub Actions workflow (build, typecheck, biome, tests, `npm pack --dry-run`).
-- Changed: package name `@ctrixin/pi-btw`, repository URL, pinned `@narumitw/pi-tui-kit` dependency,
+- Changed: package name `@ctrixin-dev/pi-btw`, repository URL, pinned `@narumitw/pi-tui-kit` dependency,
   devDependencies pinned to Pi 0.85.1.
 - Added headless RPC mode: `/btw <question>` under `pi --mode rpc` answers without any TUI surface and
   emits `BTW_EVENT:` host events (`accepted`/`running`/`delta`/`completed`/`failed`/`cancelled`/`history`,
