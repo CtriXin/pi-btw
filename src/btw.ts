@@ -22,7 +22,19 @@ import {
 	getAnsweredTurns,
 	summarizeBringToMain,
 } from "./bring-to-main.js";
+import { buildConversationContext } from "./btw-context.js";
+import {
+	collectBtwEntries,
+	newBtwId,
+	rebuildBtwThreads,
+	registerBtwEntryRenderer,
+} from "./btw-entries.js";
+import type { BtwThreadState, ResolvedBtwModel } from "./btw-state.js";
+import { BtwStateStore } from "./btw-state.js";
+import { BtwEntryViewer } from "./entry-viewer.js";
 import { type RunBtwFullscreen, runBtwFullscreen } from "./fullscreen-ui.js";
+import { emitBtwHostEvent } from "./host-events.js";
+import { runInlineBtw } from "./inline-card.js";
 import { pickMainEntry } from "./main-tree-picker.js";
 import {
 	type BtwCommandMenuResult,
@@ -47,7 +59,9 @@ import {
 	createSideThread,
 	type SideQuestionAuth,
 	type SideThread,
+	type StreamSimpleFunction,
 } from "./side-thread.js";
+import { parseFollowArgs, prepareStandaloneState, runStandaloneBtw } from "./standalone.js";
 import { sanitizeSingleLine } from "./text.js";
 import {
 	BtwAnsweringView,
@@ -56,6 +70,9 @@ import {
 	type TranscriptPagerAction,
 } from "./transcript-pager.js";
 
+export { buildConversationContext } from "./btw-context.js";
+export { BTW_ENTRY_TYPE } from "./btw-entries.js";
+export type { BtwThreadState, ResolvedBtwModel } from "./btw-state.js";
 export {
 	BTW_SETTINGS_FILE,
 	type BtwSettings,
@@ -71,8 +88,6 @@ export {
 	completeSideQuestion,
 } from "./side-thread.js";
 export { sanitizeSingleLine } from "./text.js";
-
-const MAX_CONTEXT_CHARS = 40_000;
 
 interface LoadBtwThinkingLevelOptions {
 	settingsPath?: string;
@@ -96,25 +111,22 @@ export function createModelRegistryCompleteSimple(
 	};
 }
 
+/** Raw streaming accessor used by the standalone (inline/headless) flow. */
+export function createModelRegistryStreamSimple(
+	modelRegistry: BtwProviderRegistry,
+): StreamSimpleFunction {
+	return (model, context, options) => {
+		const provider = modelRegistry.getProvider(model.provider);
+		if (!provider) throw new Error(`No provider registered for model provider: ${model.provider}`);
+		return provider.streamSimple(model, context, options);
+	};
+}
+
 interface ResolveBtwModelOptions {
 	settings: BtwSettings;
 	currentModel: Model<Api> | undefined;
 	modelRegistry: BtwModelRegistry;
 	warn?: (message: string) => void;
-}
-
-export interface ResolvedBtwModel {
-	model: Model<Api>;
-	auth: SideQuestionAuth;
-}
-
-export interface BtwThreadState {
-	id: string;
-	title?: string;
-	thread: SideThread;
-	thinkingLevel: BtwThinkingLevel;
-	createdAt: number;
-	updatedAt: number;
 }
 
 export async function resolveBtwModel({
@@ -248,7 +260,31 @@ export interface BtwExtensionDependencies {
 	resolveModel?: typeof resolveBtwModelWithLoader;
 	runThread?: typeof runBtwThread;
 	runFullscreen?: RunBtwFullscreen;
+	runStandalone?: typeof runStandaloneBtw;
+	runInline?: typeof runInlineBtw;
 }
+
+export type BtwThreadResult = { kind: "closed" };
+
+type BtwThreadThinkingControl = Omit<BtwThinkingControl, "keybindings">;
+
+interface BtwThreadSteeringControl {
+	questions: readonly string[];
+	submit: (question: string) => void;
+	thinking: BtwThreadThinkingControl;
+}
+
+type BtwBringToMainChoice =
+	| BtwThreadResult
+	| {
+			kind: "bringToMain";
+			draft: string;
+			summary: BtwBringToMainSummary;
+			selectionState?: BtwTextRangeSelectorState;
+	  }
+	| { kind: "back" };
+
+type BtwBringToMainDelivery = "loaded" | "back" | "closed";
 
 export default function btw(pi: ExtensionAPI, dependencies: BtwExtensionDependencies = {}) {
 	const showCommandMenu = dependencies.showCommandMenu ?? showCommandMenuForBtw;
@@ -257,11 +293,15 @@ export default function btw(pi: ExtensionAPI, dependencies: BtwExtensionDependen
 	const resolveModel = dependencies.resolveModel ?? resolveBtwModelWithLoader;
 	const runThread = dependencies.runThread ?? runBtwThread;
 	const runFullscreen = dependencies.runFullscreen ?? runBtwFullscreen;
-	// Pi creates a fresh extension instance after session replacement or reload.
-	const resumableThreads = new Map<string, BtwThreadState>();
-	let nextThreadNumber = 1;
+	const runStandalone = dependencies.runStandalone ?? runStandaloneBtw;
+	const runInline = dependencies.runInline ?? runInlineBtw;
+	// Pi creates a fresh extension instance after session replacement or reload;
+	// threads are rebuilt from persisted custom entries on every session_start.
+	const store = new BtwStateStore();
+	registerBtwEntryRenderer(pi);
+
 	const listResumeThreads = (): BtwResumeThreadSummary[] =>
-		[...resumableThreads.values()]
+		[...store.threads.values()]
 			.reverse()
 			.filter((state) => state.thread.turns.length > 0 && state.title)
 			.sort(
@@ -272,112 +312,359 @@ export default function btw(pi: ExtensionAPI, dependencies: BtwExtensionDependen
 				title: state.title ?? "Untitled side thread",
 				questionCount: state.thread.turns.length,
 			}));
+
+	const resolveModelSilently = (settings: BtwSettings, ctx: ExtensionCommandContext) =>
+		resolveBtwModel({
+			settings,
+			currentModel: ctx.model,
+			modelRegistry: ctx.modelRegistry,
+			warn: (message) => notifySafely(ctx, message, "warning"),
+		});
+
+	// Shared by the TUI inline card and the headless RPC flow; identical events
+	// and persistence, different rendering only.
+	const runStandaloneCommand = async (
+		question: string,
+		ctx: ExtensionCommandContext,
+		existingState?: BtwThreadState,
+	): Promise<void> => {
+		const settings = await loadSettings(ctx);
+		const state = existingState ?? prepareStandaloneState(pi, ctx, settings, store);
+		const deps = {
+			settings,
+			resolveModel: () => resolveModelSilently(settings, ctx),
+			streamSimple: createModelRegistryStreamSimple(ctx.modelRegistry),
+		};
+		if (ctx.mode === "rpc") {
+			await store.track(runStandalone(pi, ctx, question, state, store, "rpc", deps));
+			return;
+		}
+		await store.track(runInline(pi, ctx, question, state, store, deps));
+	};
+
+	const runFullscreenFlow = async (
+		ctx: ExtensionCommandContext,
+		question: string,
+		withMenu: boolean,
+	): Promise<void> => {
+		let menuResult: BtwCommandMenuResult = "start";
+		let selectedConversationContext: string | undefined;
+		if (withMenu) {
+			while (true) {
+				menuResult = await showCommandMenu(pi, ctx, listResumeThreads());
+				if (menuResult === "closed") return;
+				if (menuResult !== "tree") break;
+
+				const treeResult = await pickEntry(pi, ctx);
+				if (treeResult.kind === "closed") return;
+				if (treeResult.kind === "back") continue;
+				try {
+					if (!ctx.sessionManager.getEntry(treeResult.entryId)) {
+						notifySafely(ctx, "The selected main-thread entry is no longer available", "warning");
+						continue;
+					}
+					const branch = ctx.sessionManager.getBranch(treeResult.entryId);
+					if (branch.at(-1)?.id !== treeResult.entryId) {
+						notifySafely(ctx, "The selected main-thread branch is no longer available", "warning");
+						continue;
+					}
+					selectedConversationContext = buildConversationContext(branch);
+					menuResult = "start";
+					break;
+				} catch {
+					return;
+				}
+			}
+		}
+
+		const settings = await loadSettings(ctx);
+		const sameAsMainThinkingLevel = settings.thinkingLevel === undefined;
+		const resolution = await resolveModel(settings, ctx);
+		if (resolution.kind === "cancelled") {
+			notifySafely(ctx, "Cancelled", "info");
+			return;
+		}
+		if (resolution.kind === "unavailable") {
+			notifySafely(ctx, "No available model for /btw", "error");
+			return;
+		}
+
+		let state = typeof menuResult === "object" ? store.threads.get(menuResult.threadId) : undefined;
+		if (typeof menuResult === "object" && !state) {
+			notifySafely(ctx, "The selected /btw side thread is no longer available", "warning");
+			return;
+		}
+		try {
+			await runFullscreen(
+				ctx,
+				(fullscreenCtx) => {
+					if (!state) {
+						const createdAt = Date.now();
+						state = {
+							id: `btw-${store.nextThreadNumber}`,
+							thread: createSideThread(
+								selectedConversationContext ??
+									buildConversationContext(fullscreenCtx.sessionManager.getBranch()),
+							),
+							thinkingLevel: settings.thinkingLevel ?? pi.getThinkingLevel(),
+							createdAt,
+							updatedAt: createdAt,
+						};
+						store.nextThreadNumber += 1;
+					}
+					return runThread({
+						initialQuestion: question || undefined,
+						selected: resolution.selected,
+						thinkingLevel: state.thinkingLevel,
+						rememberThinkingLevelChanges:
+							!sameAsMainThinkingLevel && effectiveRememberThinkingLevelChanges(settings),
+						state,
+						ctx: fullscreenCtx,
+					});
+				},
+				{
+					copyOnSelect: effectiveFullscreenCopyOnSelect(settings),
+					...(settings.keybindings ? { keybindings: settings.keybindings } : {}),
+				},
+			);
+		} finally {
+			if (state?.title && state.thread.turns.length > 0) {
+				store.rememberThread(state);
+			}
+		}
+	};
+
 	pi.registerCommand("btw", {
 		description: "Ask a quick side question without adding it to the main conversation",
 		handler: async (args, ctx) => {
 			const question = args.trim();
-			if (ctx.mode !== "tui") {
-				ctx.ui.notify("/btw requires interactive TUI mode", "error");
-				return;
-			}
-
-			let menuResult: BtwCommandMenuResult = "start";
-			let selectedConversationContext: string | undefined;
-			if (!question) {
-				while (true) {
-					menuResult = await showCommandMenu(pi, ctx, listResumeThreads());
-					if (menuResult === "closed") return;
-					if (menuResult !== "tree") break;
-
-					const treeResult = await pickEntry(pi, ctx);
-					if (treeResult.kind === "closed") return;
-					if (treeResult.kind === "back") continue;
+			if (question) {
+				if (ctx.mode === "tui" || ctx.mode === "rpc") {
 					try {
-						if (!ctx.sessionManager.getEntry(treeResult.entryId)) {
-							notifySafely(ctx, "The selected main-thread entry is no longer available", "warning");
-							continue;
-						}
-						const branch = ctx.sessionManager.getBranch(treeResult.entryId);
-						if (branch.at(-1)?.id !== treeResult.entryId) {
-							notifySafely(
-								ctx,
-								"The selected main-thread branch is no longer available",
-								"warning",
-							);
-							continue;
-						}
-						selectedConversationContext = buildConversationContext(branch);
-						menuResult = "start";
-						break;
-					} catch {
-						return;
+						await runStandaloneCommand(question, ctx);
+					} catch (error: unknown) {
+						notifySafely(ctx, `/btw failed: ${formatError(error)}`, "error");
 					}
+					return;
 				}
-			}
-
-			const settings = await loadSettings(ctx);
-			const sameAsMainThinkingLevel = settings.thinkingLevel === undefined;
-			const resolution = await resolveModel(settings, ctx);
-			if (resolution.kind === "cancelled") {
-				notifySafely(ctx, "Cancelled", "info");
+				notifySafely(ctx, "/btw questions require interactive TUI or RPC mode", "error");
 				return;
 			}
-			if (resolution.kind === "unavailable") {
-				notifySafely(ctx, "No available model for /btw", "error");
+			if (ctx.mode === "rpc") {
+				emitBtwHostEvent(ctx, { event: "failed", id: newBtwId(), error: "question_required" });
 				return;
 			}
-
-			let state =
-				typeof menuResult === "object" ? resumableThreads.get(menuResult.threadId) : undefined;
-			if (typeof menuResult === "object" && !state) {
-				notifySafely(ctx, "The selected /btw side thread is no longer available", "warning");
+			if (ctx.mode !== "tui") {
+				notifySafely(ctx, "/btw requires interactive TUI mode", "error");
 				return;
 			}
-			const startingTurnCount = state?.thread.turns.length ?? 0;
+			await runFullscreenFlow(ctx, "", true);
+		},
+	});
 
-			try {
-				await runFullscreen(
+	pi.registerCommand("btw:thread", {
+		description: "Open the fullscreen /btw side-thread workspace (upstream behavior)",
+		handler: async (args, ctx) => {
+			if (ctx.mode === "rpc") {
+				emitBtwHostEvent(ctx, { event: "failed", id: newBtwId(), error: "tui_required" });
+				return;
+			}
+			if (ctx.mode !== "tui") {
+				notifySafely(ctx, "/btw:thread requires interactive TUI mode", "error");
+				return;
+			}
+			await runFullscreenFlow(ctx, args.trim(), false);
+		},
+	});
+
+	pi.registerCommand("btw:cancel", {
+		description: "Cancel an in-flight /btw side question (latest when no id is given)",
+		handler: async (args, ctx) => {
+			const ref = args.trim();
+			const run = ref ? findActiveRun(store, ref) : store.latestActiveRun();
+			if (!run) {
+				notifySafely(ctx, "No active /btw question to cancel", "info");
+				return;
+			}
+			run.controller.abort();
+			notifySafely(ctx, `Cancelling ${run.id}…`, "info");
+		},
+	});
+
+	pi.registerCommand("btw:history", {
+		description: "List recent /btw side questions persisted in this session",
+		handler: async (_args, ctx) => {
+			const items = collectBtwEntries(ctx.sessionManager.getBranch()).slice(-20).reverse();
+			if (ctx.mode === "rpc") {
+				emitBtwHostEvent(ctx, { event: "history", id: "btw-history", items });
+				return;
+			}
+			if (ctx.mode !== "tui") {
+				notifySafely(ctx, "/btw:history requires interactive TUI or RPC mode", "error");
+				return;
+			}
+			if (items.length === 0) {
+				notifySafely(ctx, "No /btw history in this session", "info");
+				return;
+			}
+			const lines = items
+				.map(
+					(item) =>
+						`- **${item.status}** · \`${item.id}\` · ${sanitizeSingleLine(item.question)}${item.error ? ` — ${item.error}` : ""}`,
+				)
+				.join("\n");
+			await ctx.ui.custom(
+				(tui, theme, _keybindings, done) =>
+					new BtwEntryViewer(tui, theme, lines, "history", () => done(null)),
+				{ overlay: true },
+			);
+		},
+	});
+
+	pi.registerCommand("btw:open", {
+		description: "Read a persisted /btw answer in a scrollable overlay (latest when no id)",
+		handler: async (args, ctx) => {
+			if (ctx.mode !== "tui") {
+				notifySafely(
 					ctx,
-					(fullscreenCtx) => {
-						if (!state) {
-							const createdAt = Date.now();
-							state = {
-								id: `btw-${nextThreadNumber}`,
-								thread: createSideThread(
-									selectedConversationContext ??
-										buildConversationContext(fullscreenCtx.sessionManager.getBranch()),
-								),
-								thinkingLevel: settings.thinkingLevel ?? pi.getThinkingLevel(),
-								createdAt,
-								updatedAt: createdAt,
-							};
-							nextThreadNumber += 1;
-						}
-						return runThread({
-							initialQuestion: question || undefined,
-							selected: resolution.selected,
-							thinkingLevel: state.thinkingLevel,
-							rememberThinkingLevelChanges:
-								!sameAsMainThinkingLevel && effectiveRememberThinkingLevelChanges(settings),
-							state,
-							ctx: fullscreenCtx,
-						});
-					},
-					{
-						copyOnSelect: effectiveFullscreenCopyOnSelect(settings),
-						...(settings.keybindings ? { keybindings: settings.keybindings } : {}),
-					},
+					"/btw:open requires interactive TUI mode; RPC hosts read custom/btw entries via get_entries",
+					"error",
 				);
-			} finally {
-				if (state?.title && state.thread.turns.length > 0) {
-					if (state.thread.turns.length > startingTurnCount) {
-						resumableThreads.delete(state.id);
-					}
-					resumableThreads.set(state.id, state);
-				}
+				return;
+			}
+			const data = findEntryData(ctx, args.trim() || undefined);
+			if (!data) {
+				notifySafely(ctx, "No matching /btw entry found", "warning");
+				return;
+			}
+			const threadId = data.threadId || data.id;
+			const threadEntries = collectBtwEntries(ctx.sessionManager.getBranch()).filter(
+				(entry) => (entry.threadId || entry.id) === threadId && entry.status !== "cancelled",
+			);
+			const turns = rebuildBtwThreads(threadEntries)[0]?.turns ?? [];
+			if (turns.length === 0) {
+				notifySafely(ctx, "That /btw thread has no readable content", "warning");
+				return;
+			}
+			await ctx.ui.custom(
+				(tui, theme, _keybindings, done) =>
+					new BtwEntryViewer(tui, theme, turns, sanitizeSingleLine(data.question), () =>
+						done(null),
+					),
+				{ overlay: true },
+			);
+		},
+	});
+
+	pi.registerCommand("btw:bring", {
+		description: "Load a /btw answer into the main editor without sending it",
+		handler: async (args, ctx) => {
+			const data = findEntryData(ctx, args.trim() || undefined);
+			if (data?.status !== "completed" || !data.answer) {
+				notifySafely(ctx, "No completed /btw answer found to bring", "warning");
+				return;
+			}
+			try {
+				const existing = ctx.ui.getEditorText();
+				ctx.ui.setEditorText(existing.trim() ? `${existing}\n\n${data.answer}` : data.answer);
+				notifySafely(
+					ctx,
+					`Loaded ${data.id} into the main editor. Review and submit when ready.`,
+					"info",
+				);
+			} catch {
+				notifySafely(ctx, "Could not load the answer into the main editor", "error");
 			}
 		},
 	});
+
+	pi.registerCommand("btw:follow", {
+		description: "Ask a follow-up on an existing /btw thread: /btw:follow <id> <question>",
+		handler: async (args, ctx) => {
+			const parsed = parseFollowArgs(args);
+			if (!parsed?.question) {
+				const message = "Usage: /btw:follow <id> <question>";
+				if (ctx.mode === "rpc") {
+					emitBtwHostEvent(ctx, { event: "failed", id: newBtwId(), error: message });
+				} else {
+					notifySafely(ctx, message, "warning");
+				}
+				return;
+			}
+			if (ctx.mode !== "tui" && ctx.mode !== "rpc") {
+				notifySafely(ctx, "/btw:follow requires interactive TUI or RPC mode", "error");
+				return;
+			}
+			const entry = findEntryData(ctx, parsed.ref);
+			const threadId = entry ? entry.threadId || entry.id : parsed.ref;
+			const state = store.findThread(threadId);
+			if (!state) {
+				const message = `No /btw thread found for ${parsed.ref}`;
+				if (ctx.mode === "rpc") {
+					emitBtwHostEvent(ctx, { event: "failed", id: newBtwId(), error: message });
+				} else {
+					notifySafely(ctx, message, "warning");
+				}
+				return;
+			}
+			try {
+				await runStandaloneCommand(parsed.question, ctx, state);
+			} catch (error: unknown) {
+				notifySafely(ctx, `/btw:follow failed: ${formatError(error)}`, "error");
+			}
+		},
+	});
+
+	pi.on("session_start", (_event, ctx) => {
+		try {
+			const rebuilt = rebuildBtwThreads(collectBtwEntries(ctx.sessionManager.getBranch()));
+			for (const thread of rebuilt) {
+				if (store.threads.has(thread.threadId)) continue;
+				store.rememberThread({
+					id: thread.threadId,
+					title: thread.title,
+					thread: { conversationContext: "", turns: thread.turns },
+					thinkingLevel: isBtwThinkingLevel(thread.thinkingLevel)
+						? thread.thinkingLevel
+						: pi.getThinkingLevel(),
+					createdAt: thread.createdAt,
+					updatedAt: thread.updatedAt,
+				});
+			}
+		} catch {
+			// Rebuilding resumable threads is best-effort; entries stay in the session.
+		}
+	});
+
+	pi.on("session_shutdown", async () => {
+		for (const run of [...store.activeRuns.values()]) {
+			run.controller.abort();
+		}
+		// Give in-flight runs a chance to write their terminal cancelled entries.
+		await Promise.allSettled([...store.pendingRuns]);
+	});
+}
+
+function findActiveRun(store: BtwStateStore, ref: string) {
+	const matches = [...store.activeRuns.values()].filter(
+		(run) => run.id === ref || run.id.startsWith(ref) || run.threadId.startsWith(ref),
+	);
+	return matches.length === 1 ? matches[0] : undefined;
+}
+
+function findEntryData(ctx: ExtensionCommandContext, ref?: string) {
+	const entries = collectBtwEntries(ctx.sessionManager.getBranch());
+	if (!ref) {
+		return entries.filter((entry) => entry.status === "completed").at(-1) ?? entries.at(-1);
+	}
+	const exact = entries.find((entry) => entry.id === ref);
+	if (exact) return exact;
+	const matches = entries.filter((entry) => entry.id.startsWith(ref));
+	return matches.length === 1 ? matches[0] : undefined;
+}
+
+function isBtwThinkingLevel(value: unknown): value is BtwThinkingLevel {
+	return typeof value === "string" && (BTW_THINKING_LEVELS as readonly string[]).includes(value);
 }
 
 async function showCommandMenuForBtw(
@@ -462,28 +749,6 @@ interface RunBtwThreadDependencies {
 	persistThinkingLevel?: (level: BtwThinkingLevel) => Promise<unknown>;
 	now?: () => number;
 }
-
-export type BtwThreadResult = { kind: "closed" };
-
-type BtwThreadThinkingControl = Omit<BtwThinkingControl, "keybindings">;
-
-interface BtwThreadSteeringControl {
-	questions: readonly string[];
-	submit: (question: string) => void;
-	thinking: BtwThreadThinkingControl;
-}
-
-type BtwBringToMainChoice =
-	| BtwThreadResult
-	| {
-			kind: "bringToMain";
-			draft: string;
-			summary: BtwBringToMainSummary;
-			selectionState?: BtwTextRangeSelectorState;
-	  }
-	| { kind: "back" };
-
-type BtwBringToMainDelivery = "loaded" | "back" | "closed";
 
 interface RunBtwThreadOptions {
 	initialQuestion?: string;
@@ -946,79 +1211,4 @@ async function showThreadComposer(
 				thinking: { ...thinking, keybindings },
 			}),
 	);
-}
-
-type MessageContentBlock = {
-	type?: string;
-	text?: string;
-	name?: string;
-	arguments?: unknown;
-	result?: unknown;
-};
-
-type SessionMessage = {
-	role?: string;
-	content?: unknown;
-	stopReason?: string;
-};
-
-type SessionEntry = {
-	type: string;
-	message?: SessionMessage;
-};
-
-export function buildConversationContext(entries: readonly SessionEntry[]) {
-	const sections: string[] = [];
-
-	for (const entry of entries) {
-		if (entry.type !== "message" || !entry.message?.role) continue;
-
-		const role = entry.message.role;
-		if (role !== "user" && role !== "assistant") continue;
-
-		const contentLines = extractContentLines(entry.message.content);
-		if (contentLines.length === 0) continue;
-
-		const label = role === "user" ? "User" : "Assistant";
-		const status =
-			entry.message.stopReason && entry.message.stopReason !== "stop"
-				? ` (${entry.message.stopReason})`
-				: "";
-		sections.push(`${label}${status}: ${contentLines.join("\n")}`);
-	}
-
-	return truncateFromStart(sections.join("\n\n"), MAX_CONTEXT_CHARS);
-}
-
-function extractContentLines(content: unknown): string[] {
-	if (typeof content === "string") return [content.trim()].filter(Boolean);
-	if (!Array.isArray(content)) return [];
-
-	const lines: string[] = [];
-	for (const part of content) {
-		if (!part || typeof part !== "object") continue;
-		const block = part as MessageContentBlock;
-		if (block.type === "text" && typeof block.text === "string") {
-			lines.push(block.text.trim());
-		} else if (block.type === "toolCall" && typeof block.name === "string") {
-			lines.push(`Tool call: ${block.name}(${formatJson(block.arguments)})`);
-		} else if (block.type === "toolResult" && typeof block.name === "string") {
-			lines.push(`Tool result from ${block.name}: ${formatJson(block.result)}`);
-		}
-	}
-	return lines.filter(Boolean);
-}
-
-function formatJson(value: unknown) {
-	if (value === undefined) return "";
-	try {
-		return JSON.stringify(value);
-	} catch {
-		return String(value);
-	}
-}
-
-function truncateFromStart(text: string, maxChars: number) {
-	if (text.length <= maxChars) return text;
-	return `[Earlier context omitted; showing the last ${maxChars} characters.]\n${text.slice(-maxChars)}`;
 }

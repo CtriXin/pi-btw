@@ -417,6 +417,8 @@ test("btw command routes no arguments through the menu and preserves direct ques
 	});
 	const command = mock.commands.get("btw");
 	assert.ok(command);
+	const threadCommand = mock.commands.get("btw:thread");
+	assert.ok(threadCommand);
 	let idleWaits = 0;
 	const interactive = createMockContext({
 		mode: "tui",
@@ -427,7 +429,7 @@ test("btw command routes no arguments through the menu and preserves direct ques
 	});
 
 	await command.handler("", interactive.ctx);
-	await command.handler("direct question", interactive.ctx);
+	await threadCommand.handler("direct question", interactive.ctx);
 
 	assert.deepEqual(menuCalls, ["menu"]);
 	assert.equal(fullscreenRuns, 2);
@@ -472,7 +474,7 @@ test("btw resolves copying and shortcut overrides from each invocation's loaded 
 		},
 		runThread: async () => ({ kind: "closed" }),
 	});
-	const command = mock.commands.get("btw");
+	const command = mock.commands.get("btw:thread");
 	assert.ok(command);
 	const interactive = createMockContext({ mode: "tui", hasUI: true });
 
@@ -513,7 +515,7 @@ test("btw same-as-main mode starts fresh threads from the current main level wit
 			return { kind: "closed" };
 		},
 	});
-	const command = mock.commands.get("btw");
+	const command = mock.commands.get("btw:thread");
 	assert.ok(command);
 
 	await command.handler("same as main", createMockContext({ mode: "tui", hasUI: true }).ctx);
@@ -775,11 +777,13 @@ test("btw keeps multiple in-memory threads, resumes the selected one, and keeps 
 	});
 	const command = mock.commands.get("btw");
 	assert.ok(command);
+	const threadCommand = mock.commands.get("btw:thread");
+	assert.ok(threadCommand);
 	const interactive = createMockContext({ mode: "tui", hasUI: true });
 
 	await command.handler("", interactive.ctx);
 	await command.handler("", interactive.ctx);
-	await command.handler("Direct side topic", interactive.ctx);
+	await threadCommand.handler("Direct side topic", interactive.ctx);
 	await command.handler("", interactive.ctx);
 
 	assert.deepEqual(initialQuestions, [undefined, undefined, "Direct side topic"]);
@@ -835,9 +839,11 @@ test("an empty fresh btw thread does not enter or erase the in-memory Resume lis
 	});
 	const command = mock.commands.get("btw");
 	assert.ok(command);
+	const threadCommand = mock.commands.get("btw:thread");
+	assert.ok(threadCommand);
 	const interactive = createMockContext({ mode: "tui", hasUI: true });
 
-	await command.handler("Retained", interactive.ctx);
+	await threadCommand.handler("Retained", interactive.ctx);
 	await command.handler("", interactive.ctx);
 	await command.handler("", interactive.ctx);
 
@@ -921,7 +927,16 @@ test("btw command rejects non-TUI mode before reading the runtime thinking level
 	const nonInteractive = createMockContext({ mode: "print", hasUI: false });
 	await command.handler("", nonInteractive.ctx);
 
-	assert.equal(mock.commands.size, 1);
+	// The fork adds the btw:* command family around the upstream /btw command.
+	assert.deepEqual([...mock.commands.keys()].sort(), [
+		"btw",
+		"btw:bring",
+		"btw:cancel",
+		"btw:follow",
+		"btw:history",
+		"btw:open",
+		"btw:thread",
+	]);
 	assert.equal(
 		command.description,
 		"Ask a quick side question without adding it to the main conversation",
