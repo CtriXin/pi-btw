@@ -31,7 +31,8 @@
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"prepack": "npm run build"
+		"prepack": "npm run build",
+		"test:e2e": "npm run build && node --experimental-strip-types scripts/e2e-rpc.mts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.13",
