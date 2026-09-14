@@ -6,8 +6,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { test } from "vitest";
-import { createCustomSelectorHarness, createMockContext } from "../../../test/support.js";
 import { type MainThreadTreeSelectorOptions, pickMainEntry } from "../src/main-tree-picker.js";
+import { createCustomSelectorHarness, createMockContext } from "./support.js";
 
 function userNode(id: string, parentId: string | null, text: string): SessionTreeNode {
 	return {

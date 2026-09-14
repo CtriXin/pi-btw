@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Api, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { test } from "vitest";
-import { createMockContext, createMockPi } from "../../../test/support.js";
 import btw, {
 	BTW_SETTINGS_FILE,
 	buildConversationContext,
@@ -18,6 +17,7 @@ import btw, {
 	sanitizeSingleLine,
 } from "../src/btw.js";
 import { formatKeyLabel } from "../src/text.js";
+import { createMockContext, createMockPi } from "./support.js";
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "vitest";
-import { createMockPi } from "../../../test/support.js";
+import { createMockPi } from "./support.js";
 
 test("declared generated entry preserves registration and partial lifecycle cleanup", async () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-btw-generated-entry-"));

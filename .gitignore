@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Generated runtime (built by `npm run build`; published via `dist`)
+dist/
+.pi-btw-dist-*/
+.pi-btw-build-test-*/
+
+# Tooling
+coverage/
+*.tsbuildinfo
+*.log
+
+# Local Pi package state when testing this package in place
+.pi/npm/
+.pi/git/
+
+# OS noise
+.DS_Store
+
+# Build/test scratch output
+.pi-btw-build-test-*

@@ -1,7 +1,7 @@
 {
-	"name": "@narumitw/pi-btw",
-	"version": "0.58.1",
-	"description": "Pi extension that adds a /btw side-question command.",
+	"name": "@ctrixin/pi-btw",
+	"version": "0.59.0-fork.1",
+	"description": "Fork of @narumitw/pi-btw: /btw side questions for Pi with headless (RPC) support, persistent history, and host events.",
 	"type": "module",
 	"license": "MIT",
 	"private": false,
@@ -29,23 +29,30 @@
 		"check": "npm run build && biome check . && npm run typecheck",
 		"format": "biome check --write .",
 		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
 		"prepack": "npm run build"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.5.11",
-		"@earendil-works/pi-ai": "0.85.0",
-		"@earendil-works/pi-coding-agent": "0.85.0",
-		"@earendil-works/pi-tui": "0.85.0",
+		"@biomejs/biome": "2.5.13",
+		"@earendil-works/pi-ai": "0.85.1",
+		"@earendil-works/pi-coding-agent": "0.85.1",
+		"@earendil-works/pi-tui": "0.85.1",
+		"@types/node": "^26.4.1",
 		"esbuild": "0.28.2",
-		"typescript": "7.0.2"
+		"typescript": "7.0.2",
+		"vitest": "^5.0.0"
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/narumiruna/pi-extensions",
-		"directory": "packages/pi-btw"
+		"url": "git+https://github.com/CtriXin/pi-btw.git"
+	},
+	"homepage": "https://github.com/CtriXin/pi-btw#readme",
+	"bugs": {
+		"url": "https://github.com/CtriXin/pi-btw/issues"
 	},
 	"dependencies": {
-		"@narumitw/pi-tui-kit": "^0.59.0"
+		"@narumitw/pi-tui-kit": "0.59.0"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",

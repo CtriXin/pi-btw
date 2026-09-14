@@ -15,7 +15,7 @@ import { pathToFileURL } from "node:url";
 import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
 
-const packageRoot = resolve("packages/pi-btw");
+const packageRoot = resolve(import.meta.dirname, "..");
 const builderUrl = pathToFileURL(join(packageRoot, "scripts/build-runtime.mjs")).href;
 const forbiddenEagerInputs: readonly string[] = [];
 
