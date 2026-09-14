@@ -1,4 +1,21 @@
-# @narumitw/pi-btw
+# @ctrixin/pi-btw
+
+> Fork of `@narumitw/pi-btw` (MIT). See `NOTICE` for provenance and `README.md` for the fork diff.
+
+## 0.59.0-fork.1 (unreleased)
+
+- Repository is now a standalone package (was the `packages/pi-btw` directory of the upstream monorepo),
+  with the upstream git history imported via `git filter-repo`.
+- Added standalone dev/CI tooling: biome config, vitest config plus the upstream test helpers, and a
+  GitHub Actions workflow (build, typecheck, biome, tests, `npm pack --dry-run`).
+- Changed: package name `@ctrixin/pi-btw`, repository URL, pinned `@narumitw/pi-tui-kit` dependency,
+  devDependencies pinned to Pi 0.85.1.
+- No runtime behavior changes yet: headless/RPC mode, persisted `btw` entries, `BTW_EVENT` host events,
+  and the new commands are in progress for this version.
+
+---
+
+# Upstream changelog (`@narumitw/pi-btw`, imported at 0.58.1)
 
 ## 0.58.1
 

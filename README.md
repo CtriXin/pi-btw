@@ -1,9 +1,14 @@
 # 💬 pi-btw — Ask Side Questions Without Derailing the Main Task
 
-[![npm](https://img.shields.io/npm/v/@narumitw/pi-btw)](https://www.npmjs.com/package/@narumitw/pi-btw) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@ctrixin/pi-btw)](https://www.npmjs.com/package/@ctrixin/pi-btw) [![Pi extension](https://img.shields.io/badge/Pi-extension-blue)](https://pi.dev) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Ask questions in a temporary side thread without adding them to the main Pi conversation.
 Only context you explicitly bring back is loaded into the main editor.
+
+> **Fork notice.** This repository is a fork of [`@narumitw/pi-btw`](https://www.npmjs.com/package/@narumitw/pi-btw)
+> v0.58.1 (MIT), maintained by CtriXin. The upstream package directory was imported with its full git
+> history; the MIT `LICENSE` and copyright notice are retained. See [`NOTICE`](./NOTICE) for provenance
+> and [Fork changes](#-fork-changes) for what differs from upstream.
 
 ## ✨ Features
 
@@ -18,24 +23,56 @@ Only context you explicitly bring back is loaded into the main editor.
 ## 📦 Install
 
 ```bash
-pi install npm:@narumitw/pi-btw
+pi install npm:@ctrixin/pi-btw
 ```
 
 Try without installing permanently:
 
 ```bash
-pi -e npm:@narumitw/pi-btw
+pi -e npm:@ctrixin/pi-btw
 ```
 
-Build and try this package locally from the repository root:
+Or install a pinned git ref / a local checkout:
 
 ```bash
-npm --workspace @narumitw/pi-btw run build
-pi -e ./packages/pi-btw
+pi install git:github.com/CtriXin/pi-btw@v0.59.0-fork.1
+pi install /path/to/pi-btw
+```
+
+The `v0.59.0-fork.1` tag is created when the fork release is tagged; before that, use `@main` or a
+commit ref.
+
+Build and try this package locally from this repository root:
+
+```bash
+npm install
+npm run build
+pi -e .
 ```
 
 The package declares `dist/index.ts`, so an unbuilt local checkout must run the build before Pi loads the package directory.
 Pi extensions run with the Pi process's user permissions, so install only trusted packages.
+The upstream package (`npm:@narumitw/pi-btw`) is still installable; until coexistence behavior is
+verified and documented, install only one of the two packages.
+
+### Fork changes
+
+This fork keeps the upstream 0.58.1 TUI feature set and adds headless (RPC) support, persistent
+history, and structured host events. Status of the fork work:
+
+| Area | Status |
+| --- | --- |
+| Upstream 0.58.1 TUI behavior (`/btw`, fullscreen side thread, search, steering, bring-to-main) | Imported unchanged |
+| Repository/CI skeleton (this baseline) | In this commit |
+| Headless (`ctx.mode !== "tui"`) support | Planned (fork work in progress) |
+| Persistent `btw` custom entries and resume after restart | Planned (fork work in progress) |
+| `BTW_EVENT` structured events for MMS/Pilot | Contract drafted in [`docs/host-integration.md`](./docs/host-integration.md); planned |
+| `/btw:cancel`, `/btw:history`, `/btw:open`, `/btw:bring`, `/btw:thread` | Planned (fork work in progress) |
+| Grok-style non-blocking inline card for `/btw <question>` | Planned (fork work in progress) |
+
+Compatibility: development, tests, and the pinned `@earendil-works/pi-*` devDependencies target Pi
+**0.85.1**. Other Pi versions are not verified by this repository.
+
 
 ## 🚀 Quick start
 
@@ -153,7 +190,7 @@ The file is read for every `/btw` invocation, so edits apply without `/reload`.
 
 ## 🚧 Limitations
 
-- `/btw` supports TUI mode only.
+- `/btw` supports TUI mode only in the imported upstream baseline (headless/RPC support is planned in this fork; see [Fork changes](#-fork-changes)).
 - Resume state is memory-only and lasts only for the current extension instance.
 - A side thread retains the latest 40,000 characters of main-conversation context and adds a truncation notice when earlier content is omitted.
 - Clipboard access depends on Pi's host helper, the operating system, and the terminal.
@@ -162,12 +199,12 @@ The file is read for every `/btw` invocation, so edits apply without `/reload`.
 ## 🗂️ Package layout
 
 ```text
-packages/pi-btw/
+pi-btw/
 ├── src/                               # Authoritative implementation and helpers
 │   ├── index.ts                       # Thin Pi entrypoint
 │   └── btw.ts                         # Side-thread lifecycle and command
 ├── dist/                              # Generated Jiti runtime
-├── docs/                              # Side-thread workflows and controls
+├── docs/                              # Side-thread workflows, install, host contract
 ├── scripts/build-runtime.mjs          # Runtime builder
 └── test/                              # Behavior and lifecycle coverage
 ```
