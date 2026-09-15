@@ -1,5 +1,9 @@
 # @ctrixin-dev/pi-btw
 
+## 0.59.0-fork.3
+
+- Align the package version with the next release tag; no functional source changes.
+
 > Fork of `@narumitw/pi-btw` (MIT). See `NOTICE` for provenance and `README.md` for the fork diff.
 
 ## 0.59.0-fork.1

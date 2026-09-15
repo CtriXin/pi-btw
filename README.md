@@ -35,11 +35,11 @@ pi -e npm:@ctrixin-dev/pi-btw
 Or install a pinned git ref / a local checkout:
 
 ```bash
-pi install git:github.com/CtriXin/pi-btw@v0.59.0-fork.1
+pi install git:github.com/CtriXin/pi-btw@v0.59.0-fork.3
 pi install /path/to/pi-btw
 ```
 
-The `v0.59.0-fork.1` tag is created when the fork release is tagged; before that, use `@main` or a
+The `v0.59.0-fork.3` tag is created when the fork release is tagged; before that, use `@main` or a
 commit ref.
 
 Build and try this package locally from this repository root:
@@ -58,7 +58,7 @@ verified and documented, install only one of the two packages.
 ### Fork changes
 
 This fork keeps the upstream 0.58.1 TUI feature set and adds headless (RPC) support, persistent
-history, and structured host events. Status of the fork work (as of `v0.59.0-fork.1`):
+history, and structured host events. Status of the fork work (as of `v0.59.0-fork.3`):
 
 | Area | Status |
 | --- | --- |
