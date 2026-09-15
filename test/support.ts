@@ -217,6 +217,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 	const notifications: Array<{ message: string; level?: string }> = [];
 	const statuses = new Map<string, string | undefined>();
 	const widgets = new Map<string, unknown>();
+	const terminalInputHandlers = new Set<(data: string) => unknown>();
 	let footer: unknown;
 	let editorText = String(overrides.editorText ?? "");
 	const selectOverride = overrides.select as
@@ -317,6 +318,10 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 			setWidget(key: string, value: unknown) {
 				widgets.set(key, value);
 			},
+			onTerminalInput(handler: (data: string) => unknown) {
+				terminalInputHandlers.add(handler);
+				return () => terminalInputHandlers.delete(handler);
+			},
 			setFooter(value: unknown) {
 				footer = value;
 			},
@@ -359,6 +364,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 		notifications,
 		statuses,
 		widgets,
+		terminalInputHandlers,
 		get footer() {
 			return footer;
 		},

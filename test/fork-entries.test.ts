@@ -86,7 +86,7 @@ test("rebuildBtwThreads groups turns by thread and skips cancelled answers", () 
 	assert.equal(thread.thinkingLevel, "medium");
 });
 
-test("entry renderer shows a one-line collapsed card and a full expanded card", () => {
+test("entry renderer shows an answer preview in collapsed mode and full expanded card", () => {
 	const mock = createMockPi();
 	registerBtwEntryRenderer(mock.pi);
 	const renderer = mock.entryRenderers.get(BTW_ENTRY_TYPE);
@@ -102,10 +102,11 @@ test("entry renderer shows a one-line collapsed card and a full expanded card", 
 		render: (width: number) => string[];
 	};
 	const collapsedLines = collapsed.render(100);
-	assert.equal(collapsedLines.length <= 3, true);
+	assert.equal(collapsedLines.length <= 6, true);
 	assert.match(collapsedLines.join("\n"), /\/btw What does this repo do\?/);
 	assert.match(collapsedLines.join("\n"), /completed/);
-	assert.doesNotMatch(collapsedLines.join("\n"), /It answers side questions\./);
+	assert.match(collapsedLines.join("\n"), /It answers side questions\./);
+	assert.match(collapsedLines.join("\n"), /\/btw:open btw-aaaabbbbcccc/);
 
 	const expanded = renderer(entry, { expanded: true }, theme) as {
 		render: (width: number) => string[];
@@ -113,6 +114,29 @@ test("entry renderer shows a one-line collapsed card and a full expanded card", 
 	const expandedLines = expanded.render(100).join("\n");
 	assert.match(expandedLines, /It answers side questions\./);
 	assert.match(expandedLines, /test\/side-model/);
+});
+
+test("entry renderer keeps collapsed answer previews bounded", () => {
+	const mock = createMockPi();
+	registerBtwEntryRenderer(mock.pi);
+	const renderer = mock.entryRenderers.get(BTW_ENTRY_TYPE);
+	assert.ok(renderer);
+	const theme = {
+		fg: (_role: string, text: string) => text,
+		bg: (_role: string, text: string) => text,
+		bold: (text: string) => text,
+	};
+	const entry = {
+		type: "custom",
+		customType: BTW_ENTRY_TYPE,
+		data: completedEntry({ answer: "x".repeat(500) }),
+	};
+	const collapsed = renderer(entry, { expanded: false }, theme) as {
+		render: (width: number) => string[];
+	};
+	const lines = collapsed.render(100).join("\n");
+	assert.match(lines, /\/btw:open btw-aaaabbbbcccc/);
+	assert.ok(!lines.includes("x".repeat(200)));
 });
 
 test("buildConversationContextWithMeta reports entries, chars and truncation", () => {

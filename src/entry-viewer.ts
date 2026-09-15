@@ -1,4 +1,4 @@
-import { getMarkdownTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
 	type Focusable,
@@ -8,6 +8,7 @@ import {
 	ScrollView,
 	type TUI,
 	truncateToWidth,
+	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { SideThreadTurn } from "./side-thread.js";
 import { buildTranscriptComponents, renderTranscriptLines } from "./transcript-pager.js";
@@ -61,29 +62,50 @@ export class BtwEntryViewer implements Component, Focusable {
 	render(width: number): string[] {
 		if (width <= 0) return [];
 		const safeWidth = Math.max(1, width);
-		const viewportHeight = Math.max(1, this.tui.terminal.rows - OVERLAY_VERTICAL_MARGIN - 2);
-		const contentLines = renderTranscriptLines(this.transcriptComponents, safeWidth);
+		const frameWidth = safeWidth;
+		const innerWidth = Math.max(0, frameWidth - 2);
+		const viewportHeight = Math.max(1, this.tui.terminal.rows - OVERLAY_VERTICAL_MARGIN - 4);
+		const contentLines = renderTranscriptLines(this.transcriptComponents, innerWidth);
 		this.lastContentLineCount = contentLines.length;
 		this.scrollView.updateLayout(contentLines.length, viewportHeight, () =>
 			this.tui.requestRender(),
 		);
-		const header = truncateToWidth(
-			this.theme.fg("accent", this.theme.bold(`─ /btw ${this.title} `)),
-			safeWidth,
-		);
+		const title = truncateToWidth(`─ /btw ${this.title} `, innerWidth, "");
 		const position = `${this.scrollView.scrollTop + 1}-${Math.min(
 			this.scrollView.scrollTop + viewportHeight,
 			this.lastContentLineCount,
 		)}/${this.lastContentLineCount}`;
-		const footer = truncateToWidth(
-			this.theme.fg("muted", `${position} ↑↓ PgUp/PgDn • [Esc] close`),
-			safeWidth,
-		);
+		const footer = truncateToWidth(`${position} ↑↓ PgUp/PgDn • [Esc] close`, innerWidth, "");
 		const body = contentLines.slice(
 			this.scrollView.scrollTop,
 			this.scrollView.scrollTop + viewportHeight,
 		);
-		return [header, ...body, footer].map((line) => truncateToWidth(line, safeWidth));
+		const horizontal = "─".repeat(innerWidth);
+		const frame = (left: string, content: string, right: string, role: ThemeColor) => {
+			if (frameWidth === 1) {
+				return this.theme.bg("customMessageBg", truncateToWidth(content, frameWidth, ""));
+			}
+			if (frameWidth === 2) {
+				return this.theme.bg(
+					"customMessageBg",
+					`${this.theme.fg(role, left)}${this.theme.fg(role, right)}`,
+				);
+			}
+			const clipped = truncateToWidth(content, innerWidth, "");
+			const padded = `${clipped}${" ".repeat(Math.max(0, innerWidth - visibleWidth(clipped)))}`;
+			return this.theme.bg(
+				"customMessageBg",
+				`${this.theme.fg(role, left)}${padded}${this.theme.fg(role, right)}`,
+			);
+		};
+		const top = frame("┌", title.replace(/^─/u, "─"), "┐", "accent");
+		const bottom = frame("└", horizontal, "┘", "accent");
+		return [
+			top,
+			...body.map((line) => frame("│", line, "│", "borderMuted")),
+			frame("│", footer, "│", "muted"),
+			bottom,
+		];
 	}
 
 	handleInput(data: string): void {

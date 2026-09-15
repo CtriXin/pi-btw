@@ -6,8 +6,9 @@ import { runStandaloneBtw, type StandaloneBtwDeps } from "./standalone.js";
 import { sanitizeSingleLine } from "./text.js";
 
 // The streaming card intentionally caps its body so a long answer cannot push
-// the editor off screen; the full answer lands in the transcript entry and is
-// readable via /btw:open.
+// the editor off screen; the full answer remains visible in the card after
+// completion until the user submits another input or presses Escape.
+// The transcript entry remains the durable record and is readable via /btw:open.
 const CARD_MAX_BODY_CHARS = 1500;
 const CARD_TITLE_CHARS = 96;
 
@@ -21,7 +22,14 @@ export function createInlineCardComponent(
 	const title = sanitizeSingleLine(question);
 	const clippedTitle =
 		title.length > CARD_TITLE_CHARS ? `${title.slice(0, CARD_TITLE_CHARS - 1)}…` : title;
-	box.addChild(new Text(theme.fg("accent", theme.bold(`/btw ${clippedTitle}`)), 0, 0));
+	box.addChild(
+		new Text(
+			theme.fg("accent", theme.bold(`/btw ${clippedTitle}`)) +
+				(finished ? theme.fg("dim", "  [Esc]收起") : ""),
+			0,
+			0,
+		),
+	);
 	let body = accumulated.trim();
 	if (!body) {
 		box.addChild(new Text(theme.fg("dim", "Answering…"), 0, 0));
@@ -52,6 +60,20 @@ export async function runInlineBtw(
 	const widgetKey = `btw:${state.id}`;
 	const throttle = new DeltaThrottle(250, deps.now ?? Date.now);
 	let accumulated = "";
+	let completed = false;
+	let clearRequested = false;
+	let unsubscribeInput: (() => void) | undefined;
+	const clearWidget = () => {
+		if (clearRequested) return;
+		clearRequested = true;
+		unsubscribeInput?.();
+		unsubscribeInput = undefined;
+		try {
+			ctx.ui.setWidget(widgetKey, undefined);
+		} catch {
+			// Best effort cleanup when the TUI context is already stale.
+		}
+	};
 	const paint = (finished: boolean) => {
 		try {
 			ctx.ui.setWidget(widgetKey, (_tui, theme) =>
@@ -61,6 +83,9 @@ export async function runInlineBtw(
 			// The extension context may be replaced mid-run; the entry is the durable record.
 		}
 	};
+	unsubscribeInput = ctx.ui.onTerminalInput?.(() => {
+		if (completed) clearWidget();
+	});
 	paint(false);
 	try {
 		const entry = await runStandaloneBtw(pi, ctx, question, state, store, "tui", {
@@ -71,15 +96,12 @@ export async function runInlineBtw(
 			},
 		});
 		if (!entry) return;
-		// Final paint ensures the tail beyond the last throttled frame is visible
-		// before the widget hands over to the persistent transcript entry.
+		// Keep the completed answer visible in the inline card. The next terminal
+		// input, including Escape or a new prompt, clears it at the user's pace.
 		accumulated = entry.answer;
+		completed = true;
 		paint(true);
 	} finally {
-		try {
-			ctx.ui.setWidget(widgetKey, undefined);
-		} catch {
-			// Best effort cleanup.
-		}
+		if (!completed) clearWidget();
 	}
 }

@@ -4,10 +4,61 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { test } from "vitest";
 import btw from "../src/btw.js";
 import type { BtwEntryData } from "../src/btw-entries.js";
+import { BtwStateStore } from "../src/btw-state.js";
 import { BTW_EVENT_PREFIX } from "../src/host-events.js";
+import { createInlineCardComponent, runInlineBtw } from "../src/inline-card.js";
+import { createSideThread } from "../src/side-thread.js";
 import { createMockContext, createMockPi } from "./support.js";
 
 const MODEL = { provider: "test", id: "side-model" } as unknown as Model<Api>;
+
+test("inline card renders the completed answer instead of reverting to Answering", () => {
+	const component = createInlineCardComponent(
+		{
+			fg: (_role: string, text: string) => text,
+			bg: (_role: string, text: string) => text,
+			bold: (text: string) => text,
+		} as never,
+		"What was the secret?",
+		"The answer is visible.",
+		true,
+	);
+	const lines = component.render(100).join("\n");
+	assert.match(lines, /The answer is visible\./);
+	assert.match(lines, /\[Esc\]/);
+});
+
+test("inline card remains mounted after completion until terminal input", async () => {
+	const mock = createMockPi({ thinkingLevel: "medium" });
+	const interactive = standaloneContext(["side ", "answer"], { mode: "tui", hasUI: true }, mock);
+	const store = new BtwStateStore();
+	const state = {
+		id: "btw-inline-test",
+		thread: createSideThread("main task background"),
+		thinkingLevel: "medium" as const,
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	};
+	await runInlineBtw(mock.pi, interactive.ctx, "inline lifecycle", state, store, {
+		settings: {},
+		resolveModel: async () => ({ model: MODEL, auth: { apiKey: "k" } }),
+		streamSimple: (_model, _context, _options) => streamOf(["side ", "answer"]),
+	});
+
+	const widget = interactive.widgets.get("btw:btw-inline-test");
+	assert.equal(typeof widget, "function");
+	const component = (
+		widget as (tui: unknown, theme: unknown) => { render: (width: number) => string[] }
+	)(undefined, {
+		fg: (_role: string, text: string) => text,
+		bg: (_role: string, text: string) => text,
+		bold: (text: string) => text,
+	});
+	assert.match(component.render(100).join("\n"), /side answer/);
+	assert.equal(interactive.terminalInputHandlers.size, 1);
+	for (const handler of interactive.terminalInputHandlers) handler("x");
+	assert.equal(interactive.widgets.get("btw:btw-inline-test"), undefined);
+});
 
 function assistantMessage(text: string): AssistantMessage {
 	return {
