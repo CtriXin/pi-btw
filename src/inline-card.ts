@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Box, type Component, Text } from "@earendil-works/pi-tui";
+import { Box, type Component, Key, matchesKey, Text } from "@earendil-works/pi-tui";
 import type { BtwStateStore, BtwThreadState } from "./btw-state.js";
 import { DeltaThrottle } from "./host-events.js";
 import { runStandaloneBtw, type StandaloneBtwDeps } from "./standalone.js";
@@ -83,8 +83,17 @@ export async function runInlineBtw(
 			// The extension context may be replaced mid-run; the entry is the durable record.
 		}
 	};
-	unsubscribeInput = ctx.ui.onTerminalInput?.(() => {
-		if (completed) clearWidget();
+	unsubscribeInput = ctx.ui.onTerminalInput?.((data) => {
+		if (!completed) return undefined;
+		// Escape is Pi's abort key: while the main run streams, it cancels that run
+		// (interactive-mode `onEscape` -> `restoreQueuedMessagesToEditor({abort:true})`).
+		// The finished card advertises [Esc] as "collapse", so swallow that key here --
+		// dismissing the card must never abort the user's main task. A second Escape,
+		// once the card is gone, reaches Pi and aborts as usual. Every other key falls
+		// through unchanged so typing both clears the card and reaches the editor.
+		const dismissedByEscape = matchesKey(data, Key.escape);
+		clearWidget();
+		return dismissedByEscape ? { consume: true } : undefined;
 	});
 	paint(false);
 	try {

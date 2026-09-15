@@ -60,6 +60,56 @@ test("inline card remains mounted after completion until terminal input", async 
 	assert.equal(interactive.widgets.get("btw:btw-inline-test"), undefined);
 });
 
+// Regression: the finished card labels [Esc] as "collapse", but Escape is also
+// Pi's abort key -- an un-consumed Escape reaches `onEscape` and, while the main
+// run is streaming, cancels it. Dismissing the card must never kill the main task.
+test("escape that dismisses the completed card is consumed, other keys are not", async () => {
+	const mock = createMockPi({ thinkingLevel: "medium" });
+	const interactive = standaloneContext(["side ", "answer"], { mode: "tui", hasUI: true }, mock);
+	const store = new BtwStateStore();
+	const state = {
+		id: "btw-esc-test",
+		thread: createSideThread("main task background"),
+		thinkingLevel: "medium" as const,
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	};
+	await runInlineBtw(mock.pi, interactive.ctx, "esc lifecycle", state, store, {
+		settings: {},
+		resolveModel: async () => ({ model: MODEL, auth: { apiKey: "k" } }),
+		streamSimple: (_model, _context, _options) => streamOf(["side ", "answer"]),
+	});
+
+	assert.equal(interactive.terminalInputHandlers.size, 1);
+	const [handler] = [...interactive.terminalInputHandlers];
+	const result = handler("\x1b") as { consume?: boolean } | undefined;
+	assert.equal(result?.consume, true, "Escape must be swallowed so it cannot abort the main run");
+	assert.equal(interactive.widgets.get("btw:btw-esc-test"), undefined);
+});
+
+test("a printable key dismisses the card but still reaches the editor", async () => {
+	const mock = createMockPi({ thinkingLevel: "medium" });
+	const interactive = standaloneContext(["side ", "answer"], { mode: "tui", hasUI: true }, mock);
+	const store = new BtwStateStore();
+	const state = {
+		id: "btw-passthrough-test",
+		thread: createSideThread("main task background"),
+		thinkingLevel: "medium" as const,
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	};
+	await runInlineBtw(mock.pi, interactive.ctx, "passthrough lifecycle", state, store, {
+		settings: {},
+		resolveModel: async () => ({ model: MODEL, auth: { apiKey: "k" } }),
+		streamSimple: (_model, _context, _options) => streamOf(["side ", "answer"]),
+	});
+
+	const [handler] = [...interactive.terminalInputHandlers];
+	const result = handler("x") as { consume?: boolean } | undefined;
+	assert.notEqual(result?.consume, true, "typing must still reach the editor");
+	assert.equal(interactive.widgets.get("btw:btw-passthrough-test"), undefined);
+});
+
 function assistantMessage(text: string): AssistantMessage {
 	return {
 		role: "assistant",
