@@ -191,6 +191,12 @@ export function registerBtwEntryRenderer(pi: ExtensionAPI): void {
 				0,
 			),
 		);
+		const answer = sanitizeSingleLine(data.answer);
+		if (!expanded && data.status === "completed" && answer) {
+			const preview = answer.length > 180 ? `${answer.slice(0, 179)}…` : answer;
+			box.addChild(new Text(theme.fg("text", preview), 0, 0));
+			box.addChild(new Text(theme.fg("dim", `/btw:open ${data.id} 查看全文`), 0, 0));
+		}
 		if (expanded) {
 			box.addChild(new Text(theme.fg("dim", `Q: ${data.question}`), 0, 0));
 			if (data.answer) {

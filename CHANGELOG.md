@@ -1,5 +1,18 @@
 # @ctrixin-dev/pi-btw
 
+## 0.59.0-fork.4
+
+- Fixed: the inline card reverted to `Answering…` once the run completed, so the answer was only
+  reachable through `/btw:open`. The finished answer now stays in the card until the next terminal
+  input, and the header advertises `[Esc]` to collapse it.
+- Fixed: the collapsed transcript entry showed only the question, so a completed side question left
+  no readable trace in the conversation. It now renders an answer preview plus `/btw:open <id>`.
+- Fixed: the `/btw:open` overlay painted only the text cells, letting the conversation show through
+  the gaps. The viewer now draws a full frame and pads every line to the interior width.
+- Fixed: Escape is also Pi's abort key. Because the card's `[Esc]` hint did not consume the key, it
+  reached `onEscape` and cancelled the streaming main task — the card told users to press a key that
+  killed their own run. The finished card now swallows that Escape; a second Escape aborts as usual.
+
 ## 0.59.0-fork.3
 
 - Align the package version with the next release tag; no functional source changes.
