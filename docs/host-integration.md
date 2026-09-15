@@ -1,8 +1,7 @@
 # Host integration contract (v1)
 
-Status: **contract definition**. The extension code in this repository is currently the upstream
-`0.58.1` baseline; headless/RPC support, persistence, and these events are the fork work in progress.
-This document is the agreed shape that the extension and its host (MMS / Pilot) must both follow.
+Status: **implemented** in `@ctrixin-dev/pi-btw` `v0.59.0-fork.1` (headless RPC mode, persistence, and
+these events are shipped and covered by `npm test` plus `npm run test:e2e`).
 
 ## Goals
 
@@ -30,6 +29,7 @@ It is persisted to the session and does **not** enter the LLM context. Running t
 {
   "v": 1,
   "id": "btw-<12hex>",
+  "threadId": "btw-<12hex of the first turn>",
   "question": "…",
   "status": "completed|failed|cancelled",
   "answer": "…",
@@ -43,6 +43,10 @@ It is persisted to the session and does **not** enter the LLM context. Running t
   "host": "tui|rpc"
 }
 ```
+
+`threadId` groups follow-up turns (`/btw:follow`); the first turn's `id` equals its `threadId`.
+Cancelled turns persist with an empty `answer` and `error: "cancelled"` — partial answers are never
+written.
 
 ## RPC / headless events
 

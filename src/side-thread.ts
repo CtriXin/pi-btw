@@ -1,6 +1,7 @@
 import type {
 	Api,
 	AssistantMessage,
+	AssistantMessageEventStream,
 	Context,
 	Message,
 	Model,
@@ -32,6 +33,14 @@ export type CompleteSimpleFunction = <TApi extends Api>(
 	context: Context,
 	options?: SimpleStreamOptions,
 ) => Promise<AssistantMessage>;
+
+// Raw streaming variant of CompleteSimpleFunction: exposes per-event deltas so
+// headless hosts and inline cards can render progress while the answer grows.
+export type StreamSimpleFunction = <TApi extends Api>(
+	model: Model<TApi>,
+	context: Context,
+	options?: SimpleStreamOptions,
+) => AssistantMessageEventStream;
 
 export type SideThreadTurn =
 	| {
@@ -123,6 +132,76 @@ export async function completeSideThreadTurn({
 		}
 
 		const answer = extractAssistantText(response) || "No response received.";
+		thread.turns.push({ kind: "answered", question, answer, response });
+		return { kind: "answered", response, answer };
+	} catch (error: unknown) {
+		if (signal?.aborted) return { kind: "aborted" };
+		return { kind: "error", message: formatError(error) };
+	}
+}
+
+export interface StreamSideThreadTurnOptions {
+	thread: SideThread;
+	model: Model<Api>;
+	question: string;
+	thinkingLevel: BtwThinkingLevel;
+	auth: SideQuestionAuth;
+	signal?: AbortSignal;
+	streamSimple: StreamSimpleFunction;
+	sessionId?: string;
+	/** Called with the accumulated answer text after every text delta. */
+	onTextDelta?: (accumulated: string, delta: string) => void;
+}
+
+// Streaming sibling of completeSideThreadTurn: same prompt/options/thread
+// bookkeeping, but iterates the provider event stream so callers can observe
+// text deltas. Abort via the provided AbortSignal; an aborted stream resolves
+// to { kind: "aborted" } exactly like completeSideThreadTurn.
+export async function streamSideThreadTurn({
+	thread,
+	model,
+	question,
+	thinkingLevel,
+	auth,
+	signal,
+	streamSimple,
+	sessionId,
+	onTextDelta,
+}: StreamSideThreadTurnOptions): Promise<CompleteSideThreadTurnResult> {
+	if (signal?.aborted) return { kind: "aborted" };
+	let stream: AssistantMessageEventStream;
+	try {
+		stream = streamSimple(
+			model,
+			{ systemPrompt: SYSTEM_PROMPT, messages: buildSideThreadMessages(thread, question) },
+			buildStreamOptions(auth, { thinkingLevel, signal, model, sessionId }),
+		);
+	} catch (error: unknown) {
+		if (signal?.aborted) return { kind: "aborted" };
+		return { kind: "error", message: formatError(error) };
+	}
+
+	let accumulated = "";
+	try {
+		for await (const event of stream) {
+			if (event.type === "text_delta") {
+				accumulated += event.delta;
+				onTextDelta?.(accumulated, event.delta);
+			}
+		}
+		const response = await stream.result();
+		if (signal?.aborted || response?.stopReason === "aborted") return { kind: "aborted" };
+		if (!isAssistantMessage(response)) {
+			return { kind: "error", message: "The side model returned a malformed response." };
+		}
+		if (response.stopReason === "error") {
+			return {
+				kind: "error",
+				message: response.errorMessage ?? "The side model returned an error.",
+			};
+		}
+
+		const answer = extractAssistantText(response) || accumulated.trim() || "No response received.";
 		thread.turns.push({ kind: "answered", question, answer, response });
 		return { kind: "answered", response, answer };
 	} catch (error: unknown) {

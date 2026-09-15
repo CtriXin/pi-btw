@@ -1,17 +1,28 @@
-# @ctrixin/pi-btw
+# @ctrixin-dev/pi-btw
 
 > Fork of `@narumitw/pi-btw` (MIT). See `NOTICE` for provenance and `README.md` for the fork diff.
 
-## 0.59.0-fork.1 (unreleased)
+## 0.59.0-fork.1
 
 - Repository is now a standalone package (was the `packages/pi-btw` directory of the upstream monorepo),
   with the upstream git history imported via `git filter-repo`.
 - Added standalone dev/CI tooling: biome config, vitest config plus the upstream test helpers, and a
   GitHub Actions workflow (build, typecheck, biome, tests, `npm pack --dry-run`).
-- Changed: package name `@ctrixin/pi-btw`, repository URL, pinned `@narumitw/pi-tui-kit` dependency,
+- Changed: package name `@ctrixin-dev/pi-btw`, repository URL, pinned `@narumitw/pi-tui-kit` dependency,
   devDependencies pinned to Pi 0.85.1.
-- No runtime behavior changes yet: headless/RPC mode, persisted `btw` entries, `BTW_EVENT` host events,
-  and the new commands are in progress for this version.
+- Added headless RPC mode: `/btw <question>` under `pi --mode rpc` answers without any TUI surface and
+  emits `BTW_EVENT:` host events (`accepted`/`running`/`delta`/`completed`/`failed`/`cancelled`/`history`,
+  deltas capped at 4/second) per `docs/host-integration.md`.
+- Added persistence: every terminal turn appends one `custom/btw` session entry (never enters the LLM
+  context); `session_start` rebuilds resumable threads; a registered entry renderer shows a collapsed
+  card that expands to the full Q&A.
+- Changed default `/btw <question>` TUI behavior to a non-blocking inline widget card (Grok-style):
+  the editor stays usable and the main task keeps running. The upstream fullscreen workspace moved to
+  `/btw` (no arguments) and `/btw:thread [question]`.
+- Added commands: `/btw:cancel`, `/btw:history`, `/btw:open`, `/btw:bring`, `/btw:follow`.
+- `session_shutdown` aborts in-flight runs and records them as `cancelled`.
+- Verified end-to-end against real `pi --mode rpc` with a mock upstream (`scripts/e2e-rpc.mts`):
+  in-stream answers, cancel without answer leakage, and history after `--continue`.
 
 ---
 

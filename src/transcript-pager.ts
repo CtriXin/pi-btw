@@ -587,7 +587,7 @@ export function formatSideTranscript(turns: readonly SideThreadTurn[]): string {
 		.join("\n\n");
 }
 
-function buildTranscriptComponents(
+export function buildTranscriptComponents(
 	turns: readonly SideThreadTurn[],
 	theme: Theme,
 	pendingQuestion?: string,
@@ -624,7 +624,7 @@ function buildTranscriptComponents(
 	return components;
 }
 
-function renderTranscriptLines(components: readonly Component[], width: number): string[] {
+export function renderTranscriptLines(components: readonly Component[], width: number): string[] {
 	return components
 		.flatMap((component) => component.render(width))
 		.map(stripShellIntegrationMarkers);

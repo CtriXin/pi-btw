@@ -1,5 +1,5 @@
 {
-	"name": "@ctrixin/pi-btw",
+	"name": "@ctrixin-dev/pi-btw",
 	"version": "0.59.0-fork.1",
 	"description": "Fork of @narumitw/pi-btw: /btw side questions for Pi with headless (RPC) support, persistent history, and host events.",
 	"type": "module",
@@ -31,7 +31,8 @@
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"prepack": "npm run build"
+		"prepack": "npm run build",
+		"test:e2e": "npm run build && node --experimental-strip-types scripts/e2e-rpc.mts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.13",
