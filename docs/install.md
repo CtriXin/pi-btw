@@ -15,10 +15,10 @@ pi -e npm:@ctrixin-dev/pi-btw
 ## From git
 
 ```bash
-pi install git:github.com/CtriXin/pi-btw@v0.59.0-fork.1
+pi install git:github.com/CtriXin/pi-btw@v0.59.0-fork.3
 ```
 
-The `v0.59.0-fork.1` tag is created when the fork release is tagged; before that, use `@main` or a
+The `v0.59.0-fork.3` tag is created when the fork release is tagged; before that, use `@main` or a
 commit ref.
 
 Use a tag or commit ref; `pi` clones the repository into `~/.pi/agent/git/<host>/<path>` and runs
